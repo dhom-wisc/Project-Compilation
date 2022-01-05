@@ -1,0 +1,170 @@
+---
+title: "K-Means Clustering Analysis for Wine Data"
+author: "Daniel"
+date: "1/4/2022"
+output: html_document
+---
+Let’s consider a very basic simulated example – 
+let’s simulate normal random variables with different means:
+```{r}
+set.seed(2)
+x = matrix(rnorm(50*2), ncol=2)
+x[1:25,1] = x[1:25,1] + 3
+x[1:25,2] = x[1:25,2] - 4
+km.out = kmeans(x,2,nstart=20)
+plot(x, col=(km.out$cluster+ 1), main="K-Means Clustering Results with K=2", xlab="", ylab="", pch=20, cex=2)
+```
+
+Next, let's import all of the relevant data.
+```{r cars}
+setwd("/Users/danielhom/Desktop/University of Wisconsin Business Analytics Program and Learning/First Semester/GEN BUS 656 — MACHINE LEARNING FOR BUSINESS ANALYTICS/Code and Data Sets") #Change the working directory while working on your own computer.
+raw <- read.csv("winequality-red (1).csv", sep = ";")
+dim(raw)
+raw[1:3,]
+
+library(psych)
+describe(raw)[,1:5]
+```
+So it’s a large dataset, and the first three numbers are indices. However, the remaning columns provide rather detailed information for each county. Let’s visualize:
+
+```{r}
+library(corrplot)
+rho <- cor(raw[,-(1:3)], use="pairwise.complete.obs")
+col3 <- colorRampPalette(c("red", "white", "blue"))
+corrplot(rho, tl.cex=.7, order="hclust", col=col3(50))
+
+corrplot(rho, order="hclust", method="shade", col=col3(50), tl.cex=.7)
+```
+So quite a bit of correlation, but nothing seems to be “replicated.” 
+Unfortunately, we have a bunch of missing data. Let’s try to omit missing data:
+```{r}
+dat <- raw
+dd <- describe(dat)[,1:5] 
+dd
+
+dim(dat)
+dim(na.omit(dat))
+```
+And let’s scale the data so as to make sure we are comparing apples to apples:
+```{r}
+dat <- scale(dat)
+dat <- as.data.frame(dat)
+dat[1:2,]
+describe(dat)[,1:4]
+```
+Exploratory data analysis:
+```{r}
+describe(dat)[,1:4]
+corrplot(cor(dat), tl.cex=.7, order="hclust", col=col3(50))
+```
+As a heuristic to suggest the appropriate number of clusters, 
+we evaluate how the within sum of squares varies by clusters:
+```{r}
+ss <- function(x)  sum( ( x-mean(x) )^2 )
+wss <- NULL
+wss[1] <- sum( apply(dat,2,ss) )
+for (k in 2:10) {
+  temp <- kmeans(dat, k)
+  wss[k] <- sum(temp$withinss)
+}
+
+barplot(wss, col="forest green", names.arg=1:length(wss)
+        , xlab="Number of Clusters (k)"
+        , ylab="Total Within Sum of Squares")
+abline(h=0)
+title("Within Sum-of-Squares Analysis", col.main="black")
+
+```
+Clustering:
+```{r}
+k <- 5
+set.seed(652)
+km <- kmeans(dat, k)
+clust.km <- km$cluster
+```
+One way of illustrating a cluster is a so-called dendrogram, 
+which illustrates the hierarchical relationship between objects in a hierarchical clustering algorithm (try to zoom):
+```{r}
+dd <- dist(dat, method="euclidean")
+hc1 <- hclust(dd, method="average")
+hc1 <- hclust(dd, method="complete")
+hc1 <- hclust(dd, method="ward.D")
+plot(hc1, hang=-1)
+rect.hclust(hc1, k=6, border="black")
+rect.hclust(hc1, k=5, border="blue")
+rect.hclust(hc1, k=4, border="red")
+rect.hclust(hc1, k=3, border="green")
+
+hc1 <- hclust(dd, method="ward.D")
+rect.hclust(hc1, k=5, border="black")
+
+clust.hc1 <- cutree(hc1,5)
+reord <- function(cluster){
+  avg <- tapply(scored$quality, cluster, mean); avg
+  ord <- order(avg); ord
+  clus <- factor(cluster, levels=ord); table(clus)
+  levels(clus) <- 1:length(clus)
+  return( as.numeric(as.character(clus)) )
+}
+
+scored <- dat
+scored$clust.km <- reord(clust.km)
+scored$clust.hc <- reord(clust.hc1)
+
+tapply(scored$quality, clust.km, mean)
+tapply(scored$quality, reord(clust.km), mean)
+table(clust.km, reord(clust.km))
+
+tapply(scored$quality, clust.hc1, mean)
+tapply(scored$quality, reord(clust.hc1), mean)
+table(clust.hc1, reord(clust.hc1))
+table(scored$clust.km, scored$clust.hc)
+```
+Let’s perform a PCA:
+```{r}
+pc1 <- prcomp(dat)
+pc1 <- prcomp(scale(dat))
+round(pc1$rotation[,1:2], 3)
+
+pcs <- predict(pc1) 
+describe(pcs)[,1:5]
+dim(pcs); dim(dat)
+
+corrplot(cor(pcs))
+```
+So as expected, the PCs are uncorrelated.
+Let’s prepare a scee plot:
+
+```{r}
+vars <- apply(pcs, 2, var)
+sum(vars); ncol(dat); ncol(pcs)
+
+barplot(vars[1:10], col="forest green", ylab="variance", las=1)
+title("Principal Components Analysis Scree Plot", col.main="black")
+abline(h=1:7, col="darkcyan")
+abline(h=0)
+
+plot(pc1)
+summary(pc1)
+
+biplot(pc1, col=c("slategrey", "navy"), cex=c(.2, .8))
+round(pc1$rotation, 4)[,1:2]
+```
+We can visualize our clusters in PC space:
+
+```{r}
+col <- c("blue","dodgerblue","lightgreen","pink","red")
+par(mfrow=c(1,2))
+clust <- scored$clust.km
+plot(pcs, type="n", main="k-means")
+text(pcs, labels=clust, col=col[clust])
+abline(h=0); abline(v=0)
+
+
+clust <- scored$clust.hc
+plot(pcs, type="n", main="hierarchical clustering")
+text(pcs, labels=clust, col=col[clust])
+abline(h=0); abline(v=0)
+```
+
+
